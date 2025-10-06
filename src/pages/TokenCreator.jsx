@@ -340,7 +340,7 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
         throw new Error(errorMsg);
       }
 
-      const provider = window.solana;
+      // Use existing provider from above
       if (!provider?.isConnected) {
         throw new Error('Wallet disconnected during transaction. Please reconnect and try again.');
       }
