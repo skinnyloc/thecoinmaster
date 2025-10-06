@@ -371,7 +371,7 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
       toast.info('⏳ Sending to blockchain...');
       
       // Send transaction directly to Solana network
-      const connection = new Connection(rpcUrl, 'confirmed');
+      // Use existing connection from above
 
       signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
         skipPreflight: false,
