@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Loader2, Sparkles, CheckCircle2, ExternalLink, Copy, AlertTriangle, Brain, Wallet } from "lucide-react";
 import { toast } from "sonner";
-// Base44 API imports removed - will implement local functionality
+// Solana token creation with fee collection system
+import { createSolanaTokenTransaction, calculateTotalFee } from '../utils/solanaTokenCreator';
+import { uploadTokenImage, createTokenMetadata } from '../utils/fileUpload';
 
 import ImageUpload from "../components/token/ImageUpload";
 import RevokeAuthorities from "../components/token/RevokeAuthorities";
@@ -126,12 +128,12 @@ export default function TokenCreator() {
     }
   };
 
-  const calculateTotalFee = () => {
-    let total = BASE_FEE;
-    if (formData.revoke_freeze) total += REVOKE_FEE;
-    if (formData.revoke_mint) total += REVOKE_FEE;
-    if (formData.revoke_update) total += REVOKE_FEE;
-    return total;
+  const getTotalFee = () => {
+    return calculateTotalFee({
+      revoke_freeze: formData.revoke_freeze,
+      revoke_mint: formData.revoke_mint,
+      revoke_update: formData.revoke_update
+    });
   };
 
   const handleInputChange = (field, value) => {
@@ -183,16 +185,11 @@ export default function TokenCreator() {
         const formData = new FormData();
         formData.append('file', file);
 
-        // File upload will be implemented with a different service
-        throw new Error('File upload service not yet implemented');
-
-        const data = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.error || 'Upload failed');
+        const uploadResult = await uploadTokenImage(file);
+        if (!uploadResult.success) {
+          throw new Error(uploadResult.error || 'Upload failed');
         }
-
-        return data.file_url;
+        return uploadResult.url;
       } catch (error) {
         if (i === maxRetries - 1) throw error;
         console.log(`Upload attempt ${i + 1} failed, retrying...`);
@@ -298,10 +295,36 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
 
       toast.info('Building transaction...');
       
-      // Token creation will be implemented with local Solana functionality
-      throw new Error('Solana token creation service not yet implemented');
+      // Create Solana token with fee collection
+      toast.info('🔨 Building token transaction...');
 
-      const data = await apiResponse.json();
+      const rpcUrl = import.meta.env.VITE_SOLANA_RPC_URL || BACKUP_RPCS[0];
+      const { Connection, PublicKey } = window.solanaWeb3;
+      const connection = new Connection(rpcUrl, 'confirmed');
+
+      const tokenResult = await createSolanaTokenTransaction({
+        connection,
+        payer: new PublicKey(walletAddress),
+        tokenName: formData.token_name,
+        symbol: formData.symbol,
+        decimals: parseInt(formData.decimals, 10),
+        supply: formData.supply,
+        imageUrl: file_url,
+        description: formData.description || '',
+        revokeOptions: {
+          revoke_freeze: formData.revoke_freeze,
+          revoke_mint: formData.revoke_mint,
+          revoke_update: formData.revoke_update
+        }
+      });
+
+      const data = {
+        success: true,
+        transactionBase64: tokenResult.transaction.serialize({ requireAllSignatures: false }).toString('base64'),
+        mintAddress: tokenResult.mintAddress,
+        serviceFee: tokenResult.serviceFee,
+        metadata: tokenResult.metadata
+      };
 
       if (!data.success) {
         const errorMsg = data.error || 'Failed to create transaction';
@@ -348,8 +371,7 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
       toast.info('⏳ Sending to blockchain...');
       
       // Send transaction directly to Solana network
-      const { Connection } = window.solanaWeb3;
-      const connection = new Connection(BACKUP_RPCS[0], 'confirmed');
+      const connection = new Connection(rpcUrl, 'confirmed');
 
       signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
         skipPreflight: false,
@@ -566,7 +588,7 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
 
   }
 
-  const totalFee = calculateTotalFee();
+  const totalFee = getTotalFee();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-teal-50/30">
