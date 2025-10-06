@@ -8,9 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Loader2, Sparkles, CheckCircle2, ExternalLink, Copy, AlertTriangle, Brain, Wallet } from "lucide-react";
 import { toast } from "sonner";
-// Real Solana token creation with fee collection system
-import { createRealSolanaToken, sendTokenTransaction } from '../utils/realSolanaCreator';
-import { createSimpleTokenTransaction, calculateTotalFee, sendSimpleTransaction } from '../utils/simpleSolanaCreator';
+// Basic SOL transfer for testing Phantom wallet
+import { createBasicTransfer, calculateTotalFee, sendBasicTransfer } from '../utils/basicSolTransfer';
 import { uploadTokenImage, createTokenMetadata } from '../utils/fileUpload';
 
 import ImageUpload from "../components/token/ImageUpload";
@@ -296,78 +295,37 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
 
       toast.info('Building transaction...');
       
-      // Create REAL Solana token with fee collection
-      toast.info('🔨 Building Solana transaction...');
+      // Create basic SOL transfer to test Phantom wallet
+      toast.info('🔨 Creating fee payment transaction...');
 
-      // Check if Solana libraries are loaded
-      if (!window.solanaWeb3 || !window.splToken) {
-        console.error('Solana libraries not loaded:', {
-          solanaWeb3: !!window.solanaWeb3,
-          splToken: !!window.splToken
-        });
-        toast.error('Solana libraries not loaded. Please refresh the page and try again.');
-        throw new Error('Solana libraries not loaded yet');
-      }
+      console.log('🚀 Starting basic fee collection test');
 
-      console.log('✅ Solana libraries loaded successfully');
-
-      const provider = window.solana;
-      if (!provider?.isConnected) {
-        toast.error('Wallet disconnected. Please reconnect.');
-        throw new Error('Wallet not connected');
-      }
-
-      let tokenResult;
-      let useSimpleVersion = false;
-
-      // Try full token creation first, fallback to simple fee payment
+      let transferData;
       try {
-        if (window.splToken) {
-          console.log('🔨 Attempting full token creation...');
-          tokenResult = await createRealSolanaToken({
-            provider,
-            tokenName: formData.token_name,
-            symbol: formData.symbol,
-            decimals: parseInt(formData.decimals, 10),
-            supply: parseFloat(formData.supply),
-            imageUrl: file_url,
-            description: formData.description || '',
-            revokeOptions: {
-              revoke_freeze: formData.revoke_freeze,
-              revoke_mint: formData.revoke_mint,
-              revoke_update: formData.revoke_update
-            }
-          });
-          console.log('✅ Full token creation successful');
-        } else {
-          throw new Error('SPL Token library not available, using simple version');
-        }
-      } catch (tokenError) {
-        console.warn('⚠️ Full token creation failed, using simple fee payment:', tokenError.message);
-        toast.info('Using simplified version - fee payment only');
-        useSimpleVersion = true;
-
-        tokenResult = await createSimpleTokenTransaction({
-          provider,
-          tokenName: formData.token_name,
-          symbol: formData.symbol,
-          decimals: parseInt(formData.decimals, 10),
-          supply: parseFloat(formData.supply),
-          revokeOptions: {
-            revoke_freeze: formData.revoke_freeze,
-            revoke_mint: formData.revoke_mint,
-            revoke_update: formData.revoke_update
-          }
+        transferData = await createBasicTransfer({
+          revoke_freeze: formData.revoke_freeze,
+          revoke_mint: formData.revoke_mint,
+          revoke_update: formData.revoke_update
         });
-        console.log('✅ Simple transaction created');
+
+        console.log('✅ Transfer data created:', transferData);
+      } catch (error) {
+        console.error('❌ Failed to create transfer:', error);
+        toast.error(`Error: ${error.message}`);
+        throw error;
       }
 
       const data = {
         success: true,
-        transaction: tokenResult.transaction,
-        mintAddress: tokenResult.mintAddress,
-        serviceFee: tokenResult.serviceFee,
-        metadata: tokenResult.metadata
+        transaction: transferData.transaction,
+        mintAddress: `test-${Date.now()}`, // Mock mint address
+        serviceFee: transferData.serviceFee,
+        metadata: {
+          name: formData.token_name,
+          symbol: formData.symbol,
+          decimals: parseInt(formData.decimals, 10),
+          supply: formData.supply
+        }
       };
 
       if (!data.success) {
@@ -382,51 +340,52 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
         throw new Error('Wallet disconnected during transaction. Please reconnect and try again.');
       }
 
-      toast.info(`🔐 Please approve in Phantom! (Fee: ${data.serviceFee.toFixed(2)} SOL)`);
+      toast.info(`🔐 Please approve the fee payment in Phantom! (${data.serviceFee.toFixed(2)} SOL)`);
+
+      console.log('📱 Requesting Phantom signature...');
 
       // Request signature from Phantom wallet
       let signedTransaction;
       try {
+        const provider = window.solana;
+        console.log('💫 Calling provider.signTransaction...');
+
         signedTransaction = await provider.signTransaction(data.transaction);
-        console.log('✅ Transaction signed by user!');
+        console.log('✅ Transaction signed successfully!');
       } catch (signError) {
-        console.error('Signature error:', signError);
+        console.error('❌ Phantom signature error:', signError);
 
         if (signError.message?.includes('User rejected') || signError.code === 4001) {
+          toast.error('❌ You rejected the transaction');
           throw new Error('Transaction rejected by user');
         } else if (signError.message?.includes('blocked')) {
-          throw new Error('Phantom blocked this transaction. Click "Proceed anyway" in Phantom or add this site to trusted apps.');
+          toast.error('🛡️ Phantom blocked this transaction. Click "Proceed anyway" in Phantom.');
+          throw new Error('Phantom blocked transaction');
         } else {
+          toast.error(`❌ Signing failed: ${signError.message}`);
           throw new Error(`Failed to sign transaction: ${signError.message}`);
         }
       }
 
       if (!signedTransaction) {
-        throw new Error('Transaction was not properly signed. Please try again.');
+        toast.error('❌ Transaction was not signed properly');
+        throw new Error('Transaction was not properly signed');
       }
 
-      toast.info('⏳ Sending to Solana blockchain...');
+      toast.info('⏳ Sending fee payment to blockchain...');
 
-      // Send transaction to Solana network
-      const rpcUrl = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
-      const connection = new window.solanaWeb3.Connection(rpcUrl, 'confirmed');
-
-      const sendResult = useSimpleVersion
-        ? await sendSimpleTransaction(connection, signedTransaction)
-        : await sendTokenTransaction(connection, signedTransaction);
+      // Send the transaction
+      transferData.transaction = signedTransaction;
+      const sendResult = await sendBasicTransfer(transferData);
 
       if (!sendResult.success) {
+        toast.error(`❌ Blockchain error: ${sendResult.error}`);
         throw new Error(sendResult.error || 'Failed to send transaction');
       }
 
       signature = sendResult.signature;
-      console.log('✅ Transaction confirmed:', signature);
-
-      if (useSimpleVersion) {
-        toast.success('✅ Fee payment successful! (Token creation in testing mode)');
-      } else {
-        toast.success('✅ Real token created on Solana!');
-      }
+      console.log('🎉 SUCCESS! Transaction confirmed:', signature);
+      toast.success('✅ Fee payment successful! You just paid real SOL!');
 
 
       // Mock AI validation for testing
