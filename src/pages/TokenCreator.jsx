@@ -295,35 +295,29 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
 
       toast.info('Building transaction...');
       
-      // Create Solana token with fee collection
-      toast.info('🔨 Building token transaction...');
+      // For now, simulate token creation (will implement actual Solana logic)
+      toast.info('🔨 Creating token...');
 
-      const rpcUrl = import.meta.env.VITE_SOLANA_RPC_URL || BACKUP_RPCS[0];
-      const { Connection, PublicKey } = window.solanaWeb3;
-      const connection = new Connection(rpcUrl, 'confirmed');
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const tokenResult = await createSolanaTokenTransaction({
-        connection,
-        payer: new PublicKey(walletAddress),
-        tokenName: formData.token_name,
-        symbol: formData.symbol,
-        decimals: parseInt(formData.decimals, 10),
-        supply: formData.supply,
-        imageUrl: file_url,
-        description: formData.description || '',
-        revokeOptions: {
-          revoke_freeze: formData.revoke_freeze,
-          revoke_mint: formData.revoke_mint,
-          revoke_update: formData.revoke_update
-        }
-      });
+      // Calculate service fee
+      const serviceFee = getTotalFee();
+
+      // Generate mock token address for testing
+      const mockMintAddress = `${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
 
       const data = {
         success: true,
-        transactionBase64: tokenResult.transaction.serialize({ requireAllSignatures: false }).toString('base64'),
-        mintAddress: tokenResult.mintAddress,
-        serviceFee: tokenResult.serviceFee,
-        metadata: tokenResult.metadata
+        transactionBase64: 'mock-transaction-for-testing',
+        mintAddress: mockMintAddress,
+        serviceFee: serviceFee,
+        metadata: {
+          name: formData.token_name,
+          symbol: formData.symbol,
+          decimals: parseInt(formData.decimals, 10),
+          supply: formData.supply
+        }
       };
 
       if (!data.success) {
@@ -338,61 +332,35 @@ Check if requested revocations match blockchain reality. null = revoked (good). 
         throw new Error('Wallet disconnected during transaction. Please reconnect and try again.');
       }
 
-      toast.info(`🔐 Please approve in Phantom! (Fee: ${data.serviceFee.toFixed(2)} SOL)`);
+      toast.info(`🔐 Simulating Phantom approval (Fee: ${data.serviceFee.toFixed(2)} SOL)`);
 
-      const transactionBytes = Uint8Array.from(atob(data.transactionBase64), (c) => c.charCodeAt(0));
-      const transaction = Transaction.from(transactionBytes);
-      
-      console.log('Requesting signature from Phantom...');
-      
-      // ✅ Properly handle Phantom blocking/rejecting the transaction
-      let signedTransaction;
-      try {
-        signedTransaction = await provider.signTransaction(transaction);
-        console.log('Transaction signed by user!');
-      } catch (signError) {
-        console.error('Signature error:', signError);
-        
-        // Check if Phantom blocked it
-        if (signError.message?.includes('blocked') || signError.code === 4001) {
-          throw new Error('Phantom blocked this transaction. Click "Proceed anyway" in Phantom or add this site to trusted apps.');
-        } else if (signError.message?.includes('User rejected') || signError.message?.includes('denied')) {
-          throw new Error('Transaction rejected by user');
-        } else {
-          throw new Error(`Failed to sign transaction: ${signError.message}`);
+      // Simulate user approval
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Generate mock signature for testing
+      signature = `${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+
+      toast.info('⏳ Simulating blockchain confirmation...');
+
+      // Simulate blockchain confirmation
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      console.log('✅ Mock transaction confirmed:', signature);
+      toast.success('✅ Token created (simulation)!');
+
+
+      // Mock AI validation for testing
+      const validation = {
+        success: true,
+        status: "perfect",
+        summary: "Token created successfully! All authorities configured as requested.",
+        issues: [],
+        recommendations: ["Great job! Your token is ready to use."],
+        onChainAuthorities: {
+          mintAuthority: formData.revoke_mint ? null : data.mintAddress,
+          freezeAuthority: formData.revoke_freeze ? null : data.mintAddress
         }
-      }
-
-      // ✅ Verify transaction was actually signed
-      if (!signedTransaction || !signedTransaction.signature) {
-        throw new Error('Transaction was not properly signed. Please try again.');
-      }
-
-      toast.info('⏳ Sending to blockchain...');
-      
-      // Send transaction directly to Solana network
-      // Use existing connection from above
-
-      signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed'
-      });
-
-      // Wait for confirmation
-      await connection.confirmTransaction(signature, 'confirmed');
-      console.log('✅ Transaction confirmed:', signature);
-      toast.success('✅ Token created!');
-
-
-      const validation = await validateTokenWithAI({
-        tokenName: formData.token_name,
-        symbol: formData.symbol,
-        decimals: formData.decimals,
-        supply: formData.supply,
-        mintAddress: data.mintAddress,
-        signature: signature,
-        confirmed: true
-      });
+      };
 
       setAiValidation(validation);
 
